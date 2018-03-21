@@ -34,7 +34,7 @@
 STATIC mp_obj_t mp_obj_new_list_iterator(mp_obj_t list, size_t cur, mp_obj_iter_buf_t *iter_buf);
 STATIC mp_obj_list_t *list_new(size_t n);
 STATIC mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in);
-STATIC mp_obj_t list_pop(size_t n_args, const mp_obj_t *args);
+//STATIC mp_obj_t list_pop(size_t n_args, const mp_obj_t *args);
 
 // TODO: Move to mpconfig.h
 #define LIST_MIN_ALLOC 4
@@ -264,7 +264,7 @@ STATIC mp_obj_t list_extend(mp_obj_t self_in, mp_obj_t arg_in) {
     return mp_const_none; // return None, as per CPython
 }
 
-STATIC mp_obj_t list_pop(size_t n_args, const mp_obj_t *args) {
+mp_obj_t list_pop(size_t n_args, const mp_obj_t *args) {
     mp_check_self(MP_OBJ_IS_TYPE(args[0], &mp_type_list));
     mp_obj_list_t *self = MP_OBJ_TO_PTR(args[0]);
     if (self->len == 0) {
@@ -353,7 +353,7 @@ STATIC mp_obj_t list_copy(mp_obj_t self_in) {
     return mp_obj_new_list(self->len, self->items);
 }
 
-STATIC mp_obj_t list_count(mp_obj_t self_in, mp_obj_t value) {
+mp_obj_t list_count(mp_obj_t self_in, mp_obj_t value) {
     mp_check_self(MP_OBJ_IS_TYPE(self_in, &mp_type_list));
     mp_obj_list_t *self = MP_OBJ_TO_PTR(self_in);
     return mp_seq_count_obj(self->items, self->len, value);
