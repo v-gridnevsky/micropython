@@ -158,6 +158,18 @@ STATIC mp_obj_t espnow_add_peer(size_t n_args, const mp_obj_t *args) {
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_add_peer_obj, 2, 3, espnow_add_peer);
 
+STATIC mp_obj_t peer_exists(mp_obj_t mac)
+{
+    mp_obj_str_t *mac_obj = MP_OBJ_TO_PTR(mac);
+    const uint8_t *macaddr = mac_obj->data;
+    if (esp_now_is_peer_exist(macaddr)) {
+        return mp_const_true;
+    } else {
+        return mp_const_false;
+    }
+}
+MP_DEFINE_CONST_FUN_OBJ_1(peer_exists_obj, peer_exists);
+
 STATIC mp_obj_t espnow_send(mp_obj_t addr, mp_obj_t msg) {
     mp_uint_t len1;
     const uint8_t *buf1 = (const uint8_t *)mp_obj_str_get_data(addr, &len1);
@@ -265,6 +277,99 @@ STATIC mp_obj_t espnow_extract_by_mac(mp_obj_t macaddr) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(espnow_extract_by_mac_obj, espnow_extract_by_mac);
 
+
+
+
+
+
+
+STATIC mp_obj_t espnow_extract_list_by_mac(mp_obj_t macaddr) {
+    // List of separate packets from MAC to return
+    mp_obj_t packet_list = mp_obj_new_list(0, NULL);
+    //
+    bool proceed_with_deletion = false;
+    //
+    mp_obj_list_t *messages = MP_OBJ_TO_PTR(incoming_messages);
+    mp_int_t len = messages->len;
+    //
+    mp_uint_t deleted_count = 0;
+    // mp_uint_t msg_byte_id;
+    mp_uint_t deleted_indexes_pos = 0;
+    // Empty array should be ignored
+    if (len > 0) {
+        // Count deleted items
+        for (mp_int_t i = 0; i < len; i++) {
+            mp_obj_tuple_t *msg = MP_OBJ_TO_PTR(messages->items[i]);
+            if (mp_obj_equal(macaddr, msg->items[0])) {
+                deleted_count++;
+            }
+        }
+        // Define an array of deleted indexes
+        mp_uint_t deleted_indexes[deleted_count];
+        //
+        for (mp_uint_t msg_id = 0; msg_id < len; msg_id++) {
+             mp_obj_tuple_t *msg = MP_OBJ_TO_PTR(messages->items[msg_id]);
+             if (mp_obj_equal(macaddr, msg->items[0])) {
+                  // Extract current data bytes
+                  // current_buf_length = get_object_length(msg->items[1]);
+                  // current_buf = (uint8_t *)mp_obj_str_get_data(
+                  //     msg->items[1], &current_buf_length
+                  // );
+                  // Copy current bytes into the primary buffer
+                  // for (msg_byte_id = 0; msg_byte_id < current_buf_length; msg_byte_id++) {
+                  //     vstr_add_byte(&buf, current_buf[msg_byte_id]);
+                  // }
+                  //
+                  mp_obj_list_append(packet_list, msg->items[1]);
+                  // Add index to deleted
+                  proceed_with_deletion = true;
+                  deleted_indexes[deleted_indexes_pos] = msg_id;
+                  deleted_indexes_pos++;
+             }
+        }
+        // Rewind last increment
+        if (deleted_indexes_pos>0) deleted_indexes_pos--;
+
+        // Pop unrequired items
+        if (proceed_with_deletion) {
+            // printf("Starting index removal.\n");
+
+            // Delete copied messages in a reverse order
+            mp_obj_t args[] = {messages, mp_const_none};
+            // printf("Iterating for index removal.\n");
+
+            // Iterate deleted index list in a reverse order; pop those items which have to be deleted
+            while (true) {
+                // Break if there are no items
+                if (messages->len == 0) break;
+                // printf("Current deleted index pos: %u.\n", deleted_indexes_pos);
+                // printf("Current deleted index: %u.\n", deleted_indexes[deleted_indexes_pos]);
+                // Pop an item
+                args[1] = MP_OBJ_NEW_SMALL_INT(deleted_indexes[deleted_indexes_pos]);
+                list_pop(2, args);
+                // break on 0'th element
+                if (deleted_indexes_pos==0) break;
+                deleted_indexes_pos--;
+            }
+        }
+    }
+
+    // // printf("Adding a NULL-terminator to the buffer.\n");
+    // vstr_add_byte(&buf, '\0');
+
+    // return mp_obj_new_str_from_vstr(&mp_type_bytes, &buf);
+    return packet_list;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(
+    espnow_extract_list_by_mac_obj,
+    espnow_extract_list_by_mac
+);
+
+
+
+
+
+
 // STATIC bool obj_in(mp_obj_t lhs_in, mp_obj_t rhs_in) {
 //     printf("aaa\n");
 //     mp_obj_type_t *type = mp_obj_get_type(lhs_in);
@@ -310,10 +415,12 @@ STATIC const mp_rom_map_elem_t espnow_globals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&espnow_deinit_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_pmk), MP_ROM_PTR(&espnow_set_pmk_obj) },
     { MP_ROM_QSTR(MP_QSTR_add_peer), MP_ROM_PTR(&espnow_add_peer_obj) },
+    { MP_ROM_QSTR(MP_QSTR_peer_exists), MP_ROM_PTR(&peer_exists_obj) },
     { MP_ROM_QSTR(MP_QSTR_send), MP_ROM_PTR(&espnow_send_obj) },
     { MP_ROM_QSTR(MP_QSTR_send_all), MP_ROM_PTR(&espnow_send_all_obj) },
-    { MP_ROM_QSTR(MP_QSTR_extract_by_mac), MP_ROM_PTR(&espnow_extract_by_mac_obj) },
     { MP_ROM_QSTR(MP_QSTR_data_available), MP_ROM_PTR(&espnow_data_available_obj) },
+    { MP_ROM_QSTR(MP_QSTR_extract_by_mac), MP_ROM_PTR(&espnow_extract_by_mac_obj) },
+    { MP_ROM_QSTR(MP_QSTR_extract_list_by_mac), MP_ROM_PTR(&espnow_extract_list_by_mac_obj) },
     { MP_ROM_QSTR(MP_QSTR_extract_mac_list), MP_ROM_PTR(&espnow_extract_mac_list_obj) },
 };
 STATIC MP_DEFINE_CONST_DICT(espnow_globals_dict, espnow_globals_dict_table);
