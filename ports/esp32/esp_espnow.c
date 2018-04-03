@@ -197,16 +197,24 @@ STATIC mp_obj_t espnow_send_all(mp_obj_t msg) {
 MP_DEFINE_CONST_FUN_OBJ_1(espnow_send_all_obj, espnow_send_all);
 
 STATIC mp_obj_t get_packet_mac_bytes(NODE list_item) {
-    mp_obj_t current_mac_addr;
-    esnd enode;
+    esnd enode = (esnd)list_item;
     byte * p = m_new(byte, ESP_NOW_ETH_ALEN);
-    enode = (esnd)list_item;
+    mp_obj_t current_mac_addr;
     // Make a buffer, store data, make Python bytes instance,
     // append to the output
     memcpy(p, enode->macaddr, ESP_NOW_ETH_ALEN);
     current_mac_addr = mp_obj_new_bytes(p, ESP_NOW_ETH_ALEN);
-    // m_del(byte, p, ESP_NOW_ETH_ALEN);
     return current_mac_addr;
+}
+
+STATIC mp_obj_t get_packet_data_bytes(NODE list_item) {
+    esnd enode = (esnd)list_item;
+    uint16_t len = enode->len;
+    byte * p = m_new(byte, len);
+    // Make a buffer, store data, make Python bytes instance,
+    // append to the output
+    memcpy(p, enode->data, len * sizeof(byte));
+    return mp_obj_new_bytes(p, len);
 }
 
 STATIC mp_obj_t espnow_extract_list_by_mac(mp_obj_t macaddr) {
@@ -214,32 +222,19 @@ STATIC mp_obj_t espnow_extract_list_by_mac(mp_obj_t macaddr) {
     mp_obj_t current_mac_addr;
     mp_obj_t packet_list = mp_obj_new_list(0, NULL);
     mp_obj_t packet_data;
-    uint16_t len;
-    byte *p;
-    struct ESPNode *enode;
     NODE list_item;
     NODE pushed;
     if (incoming_messages != NULL) {
         list_item = getHead(incoming_messages);
         for(;;) {
             if (list_item != 0) {
-                enode = (struct ESPNode *)list_item;
-                // current_mac_addr = mp_obj_new_bytes(
-                //     enode->macaddr, ESP_NOW_ETH_ALEN
-                // );
                 current_mac_addr = get_packet_mac_bytes(list_item);
                 if (mp_obj_equal(macaddr, current_mac_addr)) {
                     pushed = removeNode(incoming_messages, list_item);
+                    packet_data = get_packet_data_bytes(pushed);
                     list_item = pushed->succ;
-                    // Make a buffer, store data, make Python bytes instance,
-                    // append to the output
-                    len = enode->len;
-                    p = m_new(byte, len);
-                    memcpy(p, enode->data, len * sizeof(byte));
-                    packet_data = mp_obj_new_bytes(p, len);
+                    free(pushed);
                     mp_obj_list_append(packet_list, packet_data);
-                    // Free node data
-                    free(enode);
                 } else {
                     list_item = list_item->succ;
                 }
@@ -250,7 +245,6 @@ STATIC mp_obj_t espnow_extract_list_by_mac(mp_obj_t macaddr) {
             }
         }
     }
-
     return packet_list;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(
@@ -264,29 +258,13 @@ STATIC mp_obj_t espnow_extract_mac_list() {
     mp_obj_t mac_list_obj = mp_obj_new_list(0, NULL);
     mp_obj_t mac_count_obj;
     mp_uint_t mac_count;
-    struct ESPNode *enode;
     NODE list_item;
-    byte *mac_bytes;
 
     if (incoming_messages != NULL && !dlListIsEmpty(incoming_messages)) {
         list_item = getHead(incoming_messages);
         for(;;) {
             if (list_item != 0 && list_item->succ != 0) {
-                // Store list item in a node instance
-                // enode = (esnd)list_item;
-                // Allocate memory to store a copy of MAC addr bytes
-                // mac_bytes = m_new(byte, ESP_NOW_ETH_ALEN);
-                // memcpy(
-                //   mac_bytes,
-                //   enode->macaddr,
-                //   ESP_NOW_ETH_ALEN * sizeof(byte)
-                // );
-                // Free the node containing current MAC
-                // // free(enode);
-                // //  // m_del(ESPNode, enode, 1);
-                // Convert current MAC to Python object
                 mac = get_packet_mac_bytes(list_item);
-                // mac = mp_obj_new_bytes(mac_bytes, ESP_NOW_ETH_ALEN);
                 // Count to check if MAC is already in list
                 mac_count_obj = list_count(mac_list_obj, mac);
                 mac_count = (mp_uint_t)mp_obj_get_int(mac_count_obj);
