@@ -68,6 +68,7 @@ struct ESPNode {
   	uint16_t len;
   	uint8_t data[ESP_NOW_MAX_DATA_LEN];
 };
+typedef struct ESPNode *esnd;
 
 NORETURN void _esp_espnow_exceptions(esp_err_t e) {
    switch (e) {
@@ -104,23 +105,18 @@ static inline void _get_bytes(mp_obj_t str, size_t len, uint8_t *dst) {
 }
 
 // Contains tuples with MAC and the message
-// static mp_obj_t incoming_messages = mp_const_none;
 static DL_LIST incoming_messages;
 // Tells if ESPNow was already initialized
 static int initialized = 0;
 
 STATIC void IRAM_ATTR recv_cb(const uint8_t *macaddr, const uint8_t *data, int len)
 {
-    // mp_obj_tuple_t *msg = mp_obj_new_tuple(2, NULL);
-    // msg->items[0] = mp_obj_new_bytes(macaddr, ESP_NOW_ETH_ALEN);
-    // msg->items[1] = mp_obj_new_bytes(data, len);
     struct ESPNode * m;
     m = malloc(sizeof(struct ESPNode));
     m->len = len;
     memcpy(m->macaddr, macaddr, ESP_NOW_ETH_ALEN);
     memcpy(m->data, data, len);
     addTail(incoming_messages, (NODE)m);
-    // mp_obj_list_append(incoming_messages, msg);
 }
 
 STATIC mp_obj_t espnow_init() {
@@ -128,7 +124,6 @@ STATIC mp_obj_t espnow_init() {
         esp_now_init();
         initialized = 1;
       	esp_now_register_recv_cb(recv_cb);
-        // incoming_messages = mp_obj_new_list(0, NULL);
         incoming_messages = newList();
     }
     return mp_const_none;
@@ -144,6 +139,8 @@ STATIC mp_obj_t espnow_deinit() {
 }
 MP_DEFINE_CONST_FUN_OBJ_0(espnow_deinit_obj, espnow_deinit);
 
+// Sets Primary Master Key. Read more:
+// https://github.com/espressif/esp-idf/blob/master/docs/en/api-reference/wifi/esp_now.rst
 STATIC mp_obj_t espnow_set_pmk(mp_obj_t pmk) {
     uint8_t buf[ESP_NOW_KEY_LEN];
     _get_bytes(pmk, ESP_NOW_KEY_LEN, buf);
@@ -199,41 +196,16 @@ STATIC mp_obj_t espnow_send_all(mp_obj_t msg) {
 }
 MP_DEFINE_CONST_FUN_OBJ_1(espnow_send_all_obj, espnow_send_all);
 
-// Count items for a given MAC
-// mp_uint_t get_mac_item_count(mp_obj_t macaddr) {
-//     mp_uint_t item_count = 0;
-//     struct ESPNode *enode;
-//     NODE list_item = getHead(incoming_messages);
-//     if ( incoming_messages != NULL ) {
-//         enode = (struct ESPNode *)list_item;
-//         for(;;) {
-//             if (list_item != 0) {
-//                 if (macaddr == enode->macaddr) item_count++;
-//                 list_item = list_item->succ;
-//             }
-//             else {
-//                 break;
-//             }
-//         }
-//     }
-//     return item_count;
-// }
-
 STATIC mp_obj_t espnow_extract_list_by_mac(mp_obj_t macaddr) {
     // List of separate packets from MAC to return
+    mp_obj_t current_mac_addr;
     mp_obj_t packet_list = mp_obj_new_list(0, NULL);
     mp_obj_t packet_data;
+    uint16_t len;
+    byte *p;
     struct ESPNode *enode;
     NODE list_item;
     NODE pushed;
-    mp_obj_t current_mac_addr;
-    // bool proceed_with_deletion = false;
-    // mp_obj_list_t *messages = MP_OBJ_TO_PTR(incoming_messages);
-    // mp_int_t len = messages->len;
-    // mp_int_t len = countNodes(incoming_messages);
-    // mp_uint_t msg_byte_id;
-    // mp_uint_t deleted_indexes_pos = 0;
-    // mp_obj_str_t *mac_str_o = MP_OBJ_TO_PTR(macaddr);
     if (incoming_messages != NULL) {
         list_item = getHead(incoming_messages);
         for(;;) {
@@ -243,55 +215,28 @@ STATIC mp_obj_t espnow_extract_list_by_mac(mp_obj_t macaddr) {
                     enode->macaddr, ESP_NOW_ETH_ALEN
                 );
                 if (mp_obj_equal(macaddr, current_mac_addr)) {
-                // if (mac_str_o->data == enode->macaddr) {
                     pushed = removeNode(incoming_messages, list_item);
                     list_item = pushed->succ;
-                    packet_data = mp_obj_new_bytes(enode->data, enode->len);
+                    // Make a buffer, store data,
+                    // make Python bytes instance,
+                    // append to the output
+                    len = enode->len;
+                    p = m_new(byte, len);
+                    memcpy(p, enode->data, len * sizeof(byte));
+                    packet_data = mp_obj_new_bytes(p, len);
                     mp_obj_list_append(packet_list, packet_data);
+                    // Free node data
+                    free(enode);
                 } else {
                     list_item = list_item->succ;
                 }
             }
             else {
+                // Stop iteration on the end of a list
                 break;
             }
         }
     }
-
-    // // Empty array should be ignored
-    // if (len > 0) {
-    //   // Define an array of deleted indexes
-    //   mp_uint_t deleted_indexes[get_mac_item_count()];
-    //
-    //   for (mp_uint_t msg_id = 0; msg_id < len; msg_id++) {
-    //        mp_obj_tuple_t *msg = MP_OBJ_TO_PTR(messages->items[msg_id]);
-    //        if (mp_obj_equal(macaddr, msg->items[0])) {
-    //             mp_obj_list_append(packet_list, msg->items[1]);
-    //             Add index to deleted
-    //             proceed_with_deletion = true;
-    //             deleted_indexes[deleted_indexes_pos] = msg_id;
-    //             deleted_indexes_pos++;
-    //        }
-    //   }
-    //     // Rewind last increment
-    //     if (deleted_indexes_pos>0) deleted_indexes_pos--;
-    //     // Pop redundant items
-    //     if (proceed_with_deletion) {
-    //         // Delete copied messages in a reverse order
-    //         mp_obj_t args[] = {messages, mp_const_none};
-    //         // Iterate deleted index list in a reverse order; pop those items which have to be deleted
-    //         while (true) {
-    //             // Break if there are no items
-    //             if (messages->len == 0) break;
-    //             // Pop an item
-    //             args[1] = MP_OBJ_NEW_SMALL_INT(deleted_indexes[deleted_indexes_pos]);
-    //             list_pop(2, args);
-    //             // break on 0'th element
-    //             if (deleted_indexes_pos==0) break;
-    //             deleted_indexes_pos--;
-    //         }
-    //     }
-    // }
 
     return packet_list;
 }
@@ -301,28 +246,42 @@ MP_DEFINE_CONST_FUN_OBJ_1(
 );
 
 STATIC mp_obj_t espnow_extract_mac_list() {
-    // mp_obj_list_t *messages = MP_OBJ_TO_PTR(incoming_messages);
-    // mp_int_t len = messages->len;
     mp_obj_t mac;
     // List to store our MACs
     mp_obj_t mac_list_obj = mp_obj_new_list(0, NULL);
+    mp_obj_t mac_count_obj;
+    mp_uint_t mac_count;
     struct ESPNode *enode;
     NODE list_item;
+    byte *mac_bytes;
+
     if (incoming_messages != NULL && !dlListIsEmpty(incoming_messages)) {
         list_item = getHead(incoming_messages);
         for(;;) {
             if (list_item != 0 && list_item->succ != 0) {
-                //
-                enode = (struct ESPNode *)list_item;
+                // Store list item in a node instance
+                enode = (esnd)list_item;
+                // Allocate memory to store a copy of MAC addr bytes
+                mac_bytes = m_new(byte, ESP_NOW_ETH_ALEN);
+                memcpy(
+                  mac_bytes,
+                  enode->macaddr,
+                  ESP_NOW_ETH_ALEN * sizeof(byte)
+                );
+                // Free the node containing current MAC
+                // free(enode);
+                // m_del(ESPNode, enode, 1);
                 // Convert current MAC to Python object
-                mac = mp_obj_new_bytes(enode->macaddr, ESP_NOW_ETH_ALEN);
+                mac = mp_obj_new_bytes(mac_bytes, ESP_NOW_ETH_ALEN);
                 // Count to check if MAC is already in list
-                mp_obj_t mac_count_obj = list_count(mac_list_obj, mac);
-                mp_uint_t mac_count = (mp_uint_t)mp_obj_get_int(mac_count_obj);
-                // If there are no such MAC in list, proceed with appending it
+                mac_count_obj = list_count(mac_list_obj, mac);
+                mac_count = (mp_uint_t)mp_obj_get_int(mac_count_obj);
+                // If there are no such MAC in list,
+                // proceed with appending it
                 if (mac_count == 0) {
                     mp_obj_list_append(mac_list_obj, mac);
                 }
+                // Process next item
                 list_item = list_item->succ;
             }
             else {
@@ -330,23 +289,11 @@ STATIC mp_obj_t espnow_extract_mac_list() {
             }
         }
     }
-    // for (mp_uint_t msg_id = 0; msg_id < len; msg_id++) {
-    //     mp_obj_tuple_t *msg = MP_OBJ_TO_PTR(messages->items[msg_id]);
-    //     mp_obj_t mac_count_obj = list_count(mac_list_obj, msg->items[0]);
-    //     mp_uint_t mac_count = (mp_uint_t)mp_obj_get_int(mac_count_obj);
-    //     if (mac_count == 0) {
-    //         mp_obj_list_append(mac_list_obj, msg->items[0]);
-    //     }
-    // }
-    //
     return mac_list_obj;
 }
 MP_DEFINE_CONST_FUN_OBJ_0(espnow_extract_mac_list_obj, espnow_extract_mac_list);
 
 STATIC mp_obj_t espnow_data_available() {
-    // mp_obj_list_t *messages = MP_OBJ_TO_PTR(incoming_messages);
-    // mp_int_t len = messages->len;
-    // return mp_obj_new_bool(len > 0);
     return mp_obj_new_bool(
         !dlListIsEmpty(incoming_messages)
     );
@@ -364,7 +311,6 @@ STATIC const mp_rom_map_elem_t espnow_globals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_data_available), MP_ROM_PTR(&espnow_data_available_obj) },
     { MP_ROM_QSTR(MP_QSTR_extract_list_by_mac), MP_ROM_PTR(&espnow_extract_list_by_mac_obj) },
     { MP_ROM_QSTR(MP_QSTR_extract_mac_list), MP_ROM_PTR(&espnow_extract_mac_list_obj) }
-    // { MP_ROM_QSTR(MP_QSTR_free_list), MP_ROM_PTR(&free_list_obj) }
 };
 STATIC MP_DEFINE_CONST_DICT(espnow_globals_dict, espnow_globals_dict_table);
 
