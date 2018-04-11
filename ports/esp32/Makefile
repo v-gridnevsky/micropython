@@ -155,8 +155,10 @@ SRC_C = \
 	machine_wdt.c \
 	mpthreadport.c \
 	machine_rtc.c \
+	lib/dl_list.c \
 	esp_espnow.c \
 	$(SRC_MOD)
+	# lib/openbsd_memcpy.c \
 
 EXTMOD_SRC_C = $(addprefix extmod/,\
 	modonewire.c \
