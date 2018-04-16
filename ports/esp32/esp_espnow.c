@@ -151,17 +151,60 @@ MP_DEFINE_CONST_FUN_OBJ_1(espnow_set_pmk_obj, espnow_set_pmk);
 
 STATIC mp_obj_t espnow_add_peer(size_t n_args, const mp_obj_t *args) {
     esp_now_peer_info_t peer = {0};
-    // leaving channel as 0 for autodetect
+    mp_obj_t channel_obj;
+    uint8_t channel;
+    // Leaving channel as 0 for autodetect
     peer.ifidx = ((wlan_if_obj_t *)MP_OBJ_TO_PTR(args[0]))->if_id;
     _get_bytes(args[1], ESP_NOW_ETH_ALEN, peer.peer_addr);
+    // Adds a channel
     if (n_args > 2) {
-        _get_bytes(args[2], ESP_NOW_KEY_LEN, peer.lmk);
+        channel_obj = args[2];
+        channel = (mp_uint_t)mp_obj_get_int(channel_obj);
+        peer.channel = channel;
+    }
+    // Adds encryption key
+    if (n_args > 3) {
+        _get_bytes(args[3], ESP_NOW_KEY_LEN, peer.lmk);
         peer.encrypt = 1;
     }
     esp_espnow_exceptions(esp_now_add_peer(&peer));
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_add_peer_obj, 2, 3, espnow_add_peer);
+
+STATIC mp_obj_t espnow_mod_peer(size_t n_args, const mp_obj_t *args) {
+    esp_now_peer_info_t peer = {0};
+    mp_obj_t channel_obj;
+    uint8_t channel;
+    // Leaving channel as 0 for autodetect
+    peer.ifidx = ((wlan_if_obj_t *)MP_OBJ_TO_PTR(args[0]))->if_id;
+    _get_bytes(args[1], ESP_NOW_ETH_ALEN, peer.peer_addr);
+    // Adds a channel
+    if (n_args > 2) {
+        channel_obj = args[2];
+        channel = (mp_uint_t)mp_obj_get_int(channel_obj);
+        peer.channel = channel;
+    }
+    // Adds encryption key
+    if (n_args > 3) {
+        _get_bytes(args[3], ESP_NOW_KEY_LEN, peer.lmk);
+        peer.encrypt = 1;
+    }
+    esp_espnow_exceptions(esp_now_mod_peer(&peer));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_mod_peer_obj, 2, 3, espnow_mod_peer);
+
+STATIC mp_obj_t espnow_del_peer(mp_obj_t mac)
+{
+    mp_obj_t exists;
+    mp_obj_str_t *mac_obj = MP_OBJ_TO_PTR(mac);
+    const uint8_t *macaddr = mac_obj->data;
+    exists = (esp_now_is_peer_exist(macaddr)) ? mp_const_true : mp_const_false;
+    esp_now_del_peer(macaddr);
+    return exists;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(espnow_del_peer_obj, espnow_del_peer);
 
 STATIC mp_obj_t peer_exists(mp_obj_t mac)
 {
@@ -297,6 +340,8 @@ STATIC const mp_rom_map_elem_t espnow_globals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&espnow_deinit_obj) },
     { MP_ROM_QSTR(MP_QSTR_set_pmk), MP_ROM_PTR(&espnow_set_pmk_obj) },
     { MP_ROM_QSTR(MP_QSTR_add_peer), MP_ROM_PTR(&espnow_add_peer_obj) },
+    { MP_ROM_QSTR(MP_QSTR_del_peer), MP_ROM_PTR(&espnow_del_peer_obj) },
+    { MP_ROM_QSTR(MP_QSTR_mod_peer), MP_ROM_PTR(&espnow_mod_peer_obj) },
     { MP_ROM_QSTR(MP_QSTR_peer_exists), MP_ROM_PTR(&peer_exists_obj) },
     { MP_ROM_QSTR(MP_QSTR_send), MP_ROM_PTR(&espnow_send_obj) },
     { MP_ROM_QSTR(MP_QSTR_send_all), MP_ROM_PTR(&espnow_send_all_obj) },
